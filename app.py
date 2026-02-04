@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import mlflow
 from mlflow.models import infer_signature
 import mlflow.sklearn
-
+import dagshub
 import logging
 
 logging.basicConfig(level=logging.WARN)
@@ -52,31 +52,45 @@ if __name__ == "__main__":
     alpha = float(sys.argv[1]) if len(sys.argv) > 1 else 0.5
     l1_ratio = float(sys.argv[2]) if len(sys.argv) > 2 else 0.5
 
-    with mlflow.start_run():
-        lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
-        lr.fit(train_x, train_y)
+    # End any active run before starting a new one
+    if mlflow.active_run() is not None:
+        mlflow.end_run()
 
-        predicted_qualities = lr.predict(test_x)
+    # For Remote server only (DAGShub)
+    dagshub.init(repo_owner='The-danielevaristus', repo_name='Mlfllow', mlflow=True)
 
-        (rmse, mae, r2) = eval_metrics(test_y, predicted_qualities)
+    try:
+        with mlflow.start_run():
+            lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
+            lr.fit(train_x, train_y)
 
-        print("Elasticnet model (alpha={:f}, l1_ratio={:f}):".format(alpha, l1_ratio))
-        print("  RMSE: %s" % rmse)
-        print("  MAE: %s" % mae)
-        print("  R2: %s" % r2)
+            predicted_qualities = lr.predict(test_x)
 
-        mlflow.log_param("alpha", alpha)
-        mlflow.log_param("l1_ratio", l1_ratio)
-        mlflow.log_metric("rmse", rmse)
-        mlflow.log_metric("r2", r2)
-        mlflow.log_metric("mae", mae)
+            (rmse, mae, r2) = eval_metrics(test_y, predicted_qualities)
 
-        predictions = lr.predict(train_x)
-        signature = infer_signature(train_x, predictions)
+            print("Elasticnet model (alpha={:f}, l1_ratio={:f}):".format(alpha, l1_ratio))
+            print("  RMSE: %s" % rmse)
+            print("  MAE: %s" % mae)
+            print("  R2: %s" % r2)
 
-        ## For Remote server only(DAGShub)
+            mlflow.log_param("alpha", alpha)
+            mlflow.log_param("l1_ratio", l1_ratio)
+            mlflow.log_metric("rmse", rmse)
+            mlflow.log_metric("r2", r2)
+            mlflow.log_metric("mae", mae)
 
-        #remote_server_uri="https://dagshub.com/krishnaik06/mlflowexperiments.mlflow"
+            predictions = lr.predict(train_x)
+            signature = infer_signature(train_x, predictions)
+
+            # Example logging for remote server (remove if not needed)
+            mlflow.log_param('parameter name', 'value')
+            mlflow.log_metric('metric name', 1)
+
+            #mlflow.set_tracking_uri('https://dagshub.com/<DagsHub-user-name>/<repository-name>.mlflow')
+    finally:
+        # Ensure any active run is ended
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
         #mlflow.set_tracking_uri(remote_server_uri)
 
         tracking_url_type_store = urlparse(mlflow.get_tracking_uri()).scheme
